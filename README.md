@@ -1,87 +1,87 @@
 # SentrySearch
 
-Semantic search over video footage. Type what you're looking for, get a trimmed clip back.
+视频语义搜索。输入你想找的内容，直接获得剪辑片段。
 
 [OpenClaw Skill](https://clawhub.ai/ssrajadh/natural-language-video-search)
 
 [<video src="https://github.com/ssrajadh/sentrysearch/raw/main/docs/demo.mp4" controls width="100%"></video>](https://github.com/user-attachments/assets/baf98fad-080b-48e1-97f5-a2db2cbd53f5)
 
-## How it works
+## 工作原理
 
-SentrySearch splits your videos into overlapping chunks (or detected camera shots), embeds each chunk as video using one of several backends — Google's Gemini Embedding API, ByteDance's Doubao ARK, Alibaba's Qwen VL (DashScope), or a local Qwen3-VL model — and stores the vectors in a local ChromaDB database. When you search, your text query is embedded into the same vector space and matched against the stored video embeddings. The top match is automatically trimmed from the original file and saved as a clip.
+SentrySearch 将视频切分为重叠片段（或检测到的镜头），通过多种后端之一——Google Gemini Embedding API、字节跳动 Doubao ARK、阿里 Qwen VL（DashScope）或本地 Qwen3-VL 模型——对每个片段进行视频嵌入，并将向量存储在本地 ChromaDB 数据库中。搜索时，文本查询会被嵌入到同一向量空间中，与已存储的视频嵌入进行匹配。最佳匹配结果会自动从原始文件中裁剪并保存为片段。
 
-## Getting Started
+## 快速开始
 
-1. Install [uv](https://docs.astral.sh/uv/) (if you don't have it):
+1. 安装 [uv](https://docs.astral.sh/uv/)（如果尚未安装）：
 
-**macOS/Linux:**
+**macOS/Linux：**
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**Windows:**
+**Windows：**
 ```powershell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 
-2. Clone and install:
+2. 克隆并安装：
 
 ```bash
 git clone https://github.com/ssrajadh/sentrysearch.git
 cd sentrysearch
 uv tool install .
-# optional: TransNetV2 shot detection / splitting
+# 可选：TransNetV2 镜头检测 / 分割
 uv tool install ".[shots]"
 ```
 
-3. Set up your API key (or [use a local model instead](#local-backend-no-api-key-needed)):
+3. 配置 API Key（或[使用本地模型](#本地后端无需-api-key)）：
 
 ```bash
 sentrysearch init
 ```
 
-This prompts for your Gemini API key, writes it to `~/.sentrysearch/.env`, and validates it with a test embedding. You can also configure other backends:
+该命令会提示输入 Gemini API Key，写入 `~/.sentrysearch/.env`，并通过测试嵌入进行验证。你也可以配置其他后端：
 
 ```bash
-sentrysearch init --backend doubao    # Doubao ARK (Volcengine)
-sentrysearch init --backend qwen      # Qwen VL (DashScope / Alibaba Cloud)
+sentrysearch init --backend doubao    # Doubao ARK（火山引擎）
+sentrysearch init --backend qwen      # Qwen VL（DashScope / 阿里云）
 ```
 
-| Backend | Env variable | Get an API key |
+| 后端 | 环境变量 | 获取 API Key |
 |---|---|---|
-| **gemini** (default) | `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| **gemini**（默认） | `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | **doubao** | `ARK_API_KEY` | [console.volcengine.com/ark](https://console.volcengine.com/ark) |
 | **qwen** | `DASHSCOPE_API_KEY` | [bailian.console.aliyun.com](https://bailian.console.aliyun.com/) |
 
-4. Index your footage:
+4. 索引视频素材：
 
 ```bash
 sentrysearch index /path/to/footage
 ```
 
-To use a non-default backend:
+使用非默认后端：
 
 ```bash
 sentrysearch index /path/to/footage --backend doubao
 sentrysearch index /path/to/footage --backend qwen
 ```
 
-5. Search:
+5. 搜索：
 
 ```bash
-sentrysearch search "red truck running a stop sign"
+sentrysearch search "闯红灯的红色卡车"
 ```
 
-Search auto-detects the backend from your index — no extra flags needed after indexing.
+搜索会自动从索引中检测后端——索引后无需额外参数。
 
-ffmpeg is required for video chunking and trimming. If you don't have it system-wide, the bundled `imageio-ffmpeg` is used automatically.
+视频分块和裁剪需要 ffmpeg。如果系统未全局安装 ffmpeg，将自动使用内置的 `imageio-ffmpeg`。
 
-> **Manual setup:** If you prefer not to use `sentrysearch init`, you can copy `.env.example` to `.env` and add your key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) manually.
+> **手动配置：** 如果不想使用 `sentrysearch init`，可以复制 `.env.example` 为 `.env`，手动填入从 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) 获取的 API Key。
 
-## Usage
+## 用法
 
-### Init
+### 初始化
 
 ```bash
 $ sentrysearch init
@@ -90,7 +90,7 @@ Validating API key...
 Setup complete. You're ready to go — run `sentrysearch index <directory>` to get started.
 ```
 
-For other backends, pass `--backend`:
+其他后端，传入 `--backend`：
 
 ```bash
 $ sentrysearch init --backend doubao
@@ -104,11 +104,11 @@ Validating API key...
 Setup complete.
 ```
 
-If a key is already configured, you'll be asked whether to overwrite it.
+如果 Key 已经配置过，会提示是否覆盖。
 
-> **Tip:** Set a spending limit at [aistudio.google.com/billing](https://aistudio.google.com/billing) to prevent accidental overspending on Gemini.
+> **提示：** 在 [aistudio.google.com/billing](https://aistudio.google.com/billing) 设置消费限额，防止 Gemini 意外超支。
 
-### Index footage
+### 索引视频素材
 
 ```bash
 $ sentrysearch index /path/to/video/footage
@@ -118,89 +118,89 @@ Indexing file 1/3: front_2024-01-15_14-30.mp4 [chunk 2/4]
 Indexed 12 new chunks from 3 files. Total: 12 chunks from 3 files.
 ```
 
-**Backend selection:**
+**后端选择：**
 
-- Default: `--backend gemini` (Gemini Embedding API)
-- `--backend doubao` — use Doubao ARK multimodal embeddings
-- `--backend qwen` — use Qwen VL multimodal embeddings (DashScope)
-- `--backend local` — use a local model instead of a remote API ([details below](#local-backend-no-api-key-needed))
+- 默认：`--backend gemini`（Gemini Embedding API）
+- `--backend doubao` — 使用 Doubao ARK 多模态嵌入
+- `--backend qwen` — 使用 Qwen VL 多模态嵌入（DashScope）
+- `--backend local` — 使用本地模型代替远程 API（[详见下文](#本地后端无需-api-key)）
 
-**Segmentation mode:**
+**分段模式：**
 
-- Default: fixed time windows (`--segmentation chunk`)
-- `--segmentation shot` — index one embedding per detected camera shot instead of fixed windows (requires `.[shots]` extra)
+- 默认：固定时间窗口（`--segmentation chunk`）
+- `--segmentation shot` — 按检测到的镜头分段索引，而非固定窗口（需要 `.[shots]` 扩展）
 
-**Example: full Qwen pipeline**
+**示例：完整的 Qwen 流程**
 
 ```bash
 sentrysearch init --backend qwen
 sentrysearch index /path/to/footage --backend qwen
-sentrysearch search "red truck running a stop sign"
+sentrysearch search "闯红灯的红色卡车"
 ```
 
-**Example: shot-based indexing**
+**示例：镜头分段索引**
 
 ```bash
 sentrysearch index /path/to/footage --segmentation shot
-sentrysearch search "car cutting me off"
+sentrysearch search "别车的车辆"
 ```
 
-**Example: Qwen backend with reranking**
+**示例：Qwen 后端 + 重排序**
 
 ```bash
 sentrysearch index /path/to/footage --backend qwen
-sentrysearch search "car running a red light" --rerank
+sentrysearch search "闯红灯的车辆" --rerank
 ```
 
-Options:
+选项：
 
-- `--chunk-duration 30` — seconds per chunk
-- `--overlap 5` — overlap between chunks
-- `--segmentation shot` — index one embedding per detected shot instead of fixed windows
-- `--shot-threshold 0.5` — shot detection threshold when `--segmentation shot` is used
-- `--no-preprocess` — skip downscaling/frame rate reduction (send raw chunks)
-- `--target-resolution 480` — target height in pixels for preprocessing
-- `--target-fps 5` — target frame rate for preprocessing
-- `--no-skip-still` — embed all chunks, even ones with no visual change
+- `--chunk-duration 30` — 每个片段的时长（秒）
+- `--overlap 5` — 片段之间的重叠时长（秒）
+- `--segmentation shot` — 按检测到的镜头分段索引，而非固定窗口
+- `--shot-threshold 0.5` — 使用 `--segmentation shot` 时的镜头检测阈值
+- `--no-preprocess` — 跳过降分辨率/降帧率（发送原始片段）
+- `--target-resolution 480` — 预处理目标高度（像素）
+- `--target-fps 5` — 预处理目标帧率
+- `--no-skip-still` — 嵌入所有片段，包括无视觉变化的静帧
 
-### Shot Detection / Splitting with TransNetV2
+### TransNetV2 镜头检测 / 分割
 
-Install the optional shot-detection extra:
+安装可选的镜头检测扩展：
 
 ```bash
 uv tool install ".[shots]"
 ```
 
-Detect shot boundaries:
+检测镜头边界：
 
 ```bash
 sentrysearch shots /path/to/video.mp4
 ```
 
-Split the video into one clip per detected shot:
+将视频按镜头分割为独立片段：
 
 ```bash
 sentrysearch shots /path/to/video.mp4 --split
 ```
 
-`--split` now prefers re-encoding so each exported shot lands cleanly on the detected boundaries.
+`--split` 优先使用重编码，确保每个导出的镜头精确落在检测到的边界上。
 
-Write the clips into a specific directory:
+将片段写入指定目录：
 
 ```bash
 sentrysearch shots /path/to/video.mp4 --split --output-dir ./my_shots
 ```
 
-This runs [TransNetV2](https://github.com/soCzech/TransNetV2) as a standalone CLI feature. You can also reuse the same shot detector during indexing with:
+该功能基于 [TransNetV2](https://github.com/soCzech/TransNetV2) 作为独立 CLI 特性运行。你也可以在索引时复用同一镜头检测器：
 
 ```bash
 sentrysearch index /path/to/video/footage --segmentation shot
 ```
 
-### Search
+### 搜索
 
 ```bash
-$ sentrysearch search "red truck running a stop sign"
+$ sentrysearch search "闯红灯的红色卡车"
   #1 [0.87] front_2024-01-15_14-30.mp4 @ 02:15-02:45
   #2 [0.74] left_2024-01-15_14-30.mp4 @ 02:10-02:40
   #3 [0.61] front_2024-01-20_09-15.mp4 @ 00:30-01:00
@@ -208,244 +208,244 @@ $ sentrysearch search "red truck running a stop sign"
 Saved clip: ./match_front_2024-01-15_14-30_02m15s-02m45s.mp4
 ```
 
-If the best result's similarity score is below the confidence threshold (default 0.41), you'll be prompted before trimming:
+如果最佳结果的相似度分数低于置信阈值（默认 0.41），裁剪前会提示确认：
 
 ```
 No confident match found (best score: 0.28). Show results anyway? [y/N]:
 ```
 
-With `--no-trim`, low-confidence results are shown with a note instead of a prompt.
+使用 `--no-trim` 时，低置信度结果只会显示提示，不会弹确认。
 
-Options: `--results N`, `--output-dir DIR`, `--no-trim` to skip auto-trimming, `--threshold 0.5` to adjust the confidence cutoff, `--save-top N` to save the top N clips instead of just the best match, `--rerank` to apply Qwen VL reranking for higher precision (Qwen backend only), `--segmentation shot` to search a shot-based index instead of the default chunk-based index. Backend, model, and segmentation are auto-detected from the index — pass `--backend`, `--model`, or `--segmentation` only to override. `--model` is local-backend only.
+选项：`--results N`、`--output-dir DIR`、`--no-trim` 跳过自动裁剪、`--threshold 0.5` 调整置信阈值、`--save-top N` 保存前 N 个片段而非仅最佳匹配、`--rerank` 应用 Qwen VL 重排序以提升精度（仅 Qwen 后端）、`--segmentation shot` 搜索镜头分段索引而非默认的固定窗口索引。后端、模型和分段模式会从索引中自动检测——仅在需要覆盖时传入 `--backend`、`--model` 或 `--segmentation`。`--model` 仅限本地后端使用。
 
-### Shot Labeling
+### 镜头标注
 
-Generate strict JSON labels for a single shot clip or an entire directory of split shots:
+为单个镜头片段或整个目录的分割镜头生成结构化 JSON 标签：
 
 ```bash
-# label one clip
+# 标注单个片段
 sentrysearch label /path/to/shot_001.mp4
 
-# label every .mp4/.mov clip in a directory
+# 标注目录下所有 .mp4/.mov 片段
 sentrysearch label /path/to/shots
 ```
 
-By default each result is written next to the source clip as `<clip>.label.json`, using the `gemini-3.1-flash-lite-preview` model and a fixed schema tuned for retrieval and remix workflows.
+默认将结果写在源片段旁边，文件名为 `<clip>.label.json`，使用 `gemini-3.1-flash-lite-preview` 模型和专为检索与混剪工作流优化的固定 schema。
 
-Useful options:
+常用选项：
 
 ```bash
-# write labels into a separate directory
+# 将标签写入单独的目录
 sentrysearch label /path/to/shots --output-dir ./labels
 
-# re-run and replace existing JSON
+# 重新运行并覆盖已有 JSON
 sentrysearch label /path/to/shots --overwrite
 
-# override the Gemini model
+# 覆盖 Gemini 模型
 sentrysearch label /path/to/shots --model your-model-name
 ```
 
-### `yt-dlp` passthrough
+### `yt-dlp` 代理命令
 
-`sentrysearch` now bundles a transparent `yt-dlp` passthrough command:
+`sentrysearch` 内置了透明的 `yt-dlp` 代理命令：
 
 ```bash
-sentrysearch yt-dlp [yt-dlp args...]
+sentrysearch yt-dlp [yt-dlp 参数...]
 ```
 
-This forwards arguments directly to the upstream `yt-dlp` module, preserving its help text, output, and exit codes.
+该命令将参数直接转发给上游 `yt-dlp` 模块，保留其帮助文本、输出和退出码。
 
-Examples:
+示例：
 
 ```bash
-# Download a single video
+# 下载单个视频
 sentrysearch yt-dlp "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# Print metadata as JSON
+# 以 JSON 格式输出元数据
 sentrysearch yt-dlp --dump-single-json "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# List available formats
+# 列出可用格式
 sentrysearch yt-dlp -F "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# Extract audio only
+# 仅提取音频
 sentrysearch yt-dlp -x --audio-format mp3 "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# Download subtitles
+# 下载字幕
 sentrysearch yt-dlp --write-subs --sub-langs en --skip-download "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# Work with playlists
+# 处理播放列表
 sentrysearch yt-dlp --flat-playlist "https://www.youtube.com/playlist?list=PLAYLIST_ID"
 ```
 
-For the full upstream option set, run:
+查看完整上游选项：
 
 ```bash
 sentrysearch yt-dlp --help
 ```
 
-### Local Backend (no API key needed)
+### 本地后端（无需 API Key）
 
-Index and search using a local Qwen3-VL-Embedding model instead of a remote API. Free, private, and runs entirely on your machine. For the best search quality, use the Gemini backend — the local 8B model is a solid alternative when you need offline/private search, and the 2B model is a fallback when hardware can't support 8B.
+使用本地 Qwen3-VL-Embedding 模型代替远程 API 进行索引和搜索。免费、私密、完全在本地运行。如需最佳搜索质量，建议使用 Gemini 后端——本地 8B 模型是离线/私密搜索的可靠替代，2B 模型则适用于硬件不足以支持 8B 的场景。
 
-The model is **auto-detected from your hardware** — qwen8b for NVIDIA GPUs and Macs with 24 GB+ RAM, qwen2b for smaller Macs and CPU-only systems. You can override with `--model qwen2b` or `--model qwen8b`. Pick an install based on your hardware:
+模型会**根据硬件自动检测**——NVIDIA GPU 和 24 GB+ RAM 的 Mac 使用 qwen8b，较小内存的 Mac 和纯 CPU 系统使用 qwen2b。可通过 `--model qwen2b` 或 `--model qwen8b` 手动覆盖。根据硬件选择安装方式：
 
-| Hardware | Install command | Auto-detected model | Notes |
+| 硬件 | 安装命令 | 自动检测模型 | 说明 |
 |---|---|---|---|
-| **Apple Silicon, 24 GB+ RAM** | `uv tool install ".[local]"` | qwen8b | Full float16 via MPS |
-| **Apple Silicon, 16 GB RAM** | `uv tool install ".[local]"` | qwen2b | 8B won't fit; 2B uses ~6 GB |
-| **Apple Silicon, 8 GB RAM** | `uv tool install ".[local]"` | qwen2b | Tight — may swap under load; Gemini API recommended instead |
-| **NVIDIA, 18 GB+ VRAM** | `uv tool install ".[local]"` | qwen8b | Full bf16 precision |
-| **NVIDIA, 8–16 GB VRAM** | `uv tool install ".[local-quantized]"` | qwen8b | 4-bit quantization (~6–8 GB) |
+| **Apple Silicon, 24 GB+ RAM** | `uv tool install ".[local]"` | qwen8b | 通过 MPS 完整 float16 |
+| **Apple Silicon, 16 GB RAM** | `uv tool install ".[local]"` | qwen2b | 8B 放不下；2B 占用约 6 GB |
+| **Apple Silicon, 8 GB RAM** | `uv tool install ".[local]"` | qwen2b | 较紧张——负载下可能交换内存；建议使用 Gemini API |
+| **NVIDIA, 18 GB+ VRAM** | `uv tool install ".[local]"` | qwen8b | 完整 bf16 精度 |
+| **NVIDIA, 8–16 GB VRAM** | `uv tool install ".[local-quantized]"` | qwen8b | 4-bit 量化（约 6-8 GB） |
 
-> **Won't work well:** Intel Macs and machines without a dedicated GPU. These fall back to CPU with float32 — too slow and memory-hungry for practical use. Use the **Gemini API backend** (the default) instead.
+> **不适用：** Intel Mac 和无独立 GPU 的机器。这些会回退到 CPU float32——太慢且内存消耗大，建议使用 **Gemini API 后端**（默认）。
 
-> **Not sure?** On Mac, use `".[local]"`. On NVIDIA, use `".[local-quantized]"` — 4-bit quantization works on the widest range of NVIDIA hardware with minimal quality loss. (bitsandbytes requires CUDA and does not work on Mac/MPS.)
+> **不确定？** Mac 上使用 `".[local]"`。NVIDIA 上使用 `".[local-quantized]"`——4-bit 量化兼容最广泛的 NVIDIA 硬件，质量损失极小。（bitsandbytes 需要 CUDA，不支持 Mac/MPS。）
 
-**Mac prerequisite:** Install system FFmpeg (the local model's video processor requires it — the Gemini backend uses a bundled ffmpeg instead):
+**Mac 前置条件：** 安装系统 FFmpeg（本地模型的视频处理器需要——Gemini 后端使用内置 ffmpeg）：
 
 ```bash
 brew install ffmpeg
 ```
 
-Index with `--backend local` and search — no extra flags needed:
+使用 `--backend local` 索引并搜索——无需额外参数：
 
 ```bash
 sentrysearch index /path/to/footage --backend local
-sentrysearch search "car running a red light"
+sentrysearch search "闯红灯的车辆"
 ```
 
-The search command auto-detects the backend and model from whatever you indexed with. You can also use `--model` as a shorthand — it implies `--backend local`:
+搜索命令会自动从索引中检测后端和模型。你也可以使用 `--model` 作为简写——它隐含 `--backend local`：
 
 ```bash
-sentrysearch index /path/to/footage --model qwen2b   # same as --backend local --model qwen2b
-sentrysearch search "car running a red light"          # auto-detects local/qwen2b from index
+sentrysearch index /path/to/footage --model qwen2b   # 等同于 --backend local --model qwen2b
+sentrysearch search "闯红灯的车辆"                      # 从索引自动检测 local/qwen2b
 ```
 
-Options:
-- `--model qwen2b` — smaller model, lower quality but only ~6 GB memory (also accepts full HuggingFace IDs)
-- `--quantize` / `--no-quantize` — force 4-bit quantization on or off (default: auto-detect based on whether bitsandbytes is installed)
+选项：
+- `--model qwen2b` — 更小的模型，质量略低但仅需约 6 GB 内存（也接受完整 HuggingFace ID）
+- `--quantize` / `--no-quantize` — 强制开启/关闭 4-bit 量化（默认：根据 bitsandbytes 是否安装自动检测）
 
-Notes:
-- First run downloads the model (~16 GB for 8B, ~4 GB for 2B).
-- Embeddings from different backends and models are **not compatible**. Each backend/model combination gets its own isolated index, so they can't accidentally mix. If you search with a model that has no indexed data, you'll be told which model was actually used.
-- Speed varies by GPU core count — base M-series chips are slower than Pro/Max but produce identical results.
+注意事项：
+- 首次运行会下载模型（8B 约 16 GB，2B 约 4 GB）。
+- 不同后端和模型的嵌入**互不兼容**。每个后端/模型组合拥有独立的隔离索引，不会意外混合。如果用未建索引的模型搜索，会提示实际使用的模型。
+- 速度随 GPU 核心数变化——基础 M 系列芯片慢于 Pro/Max，但结果相同。
 
-### Why the local model is fast
+### 本地模型为何快速
 
-The local backend stays fast and memory-efficient through a few techniques that compound:
+本地后端通过多项叠加技术保持高效和低内存占用：
 
-- **Preprocessing shrinks chunks before they hit the model.** Each 30s chunk is downscaled to 480p at 5fps via ffmpeg before embedding. A ~19 MB dashcam chunk becomes ~1 MB — a 95% reduction in pixels the model has to process. Model inference time scales with pixel count, not video duration, so this is the single biggest speedup.
-- **Low frame sampling.** The video processor sends at most 32 frames per chunk to the model (`fps=1.0`, `max_frames=32`). A 30-second chunk produces ~30 frames — not hundreds.
-- **MRL dimension truncation.** Qwen3-VL-Embedding supports [Matryoshka Representation Learning](https://arxiv.org/abs/2205.13147). Only the first 768 dimensions of each embedding are kept and L2-normalized, reducing storage and distance computation in ChromaDB.
-- **Auto-quantization.** On NVIDIA GPUs with limited VRAM, the 8B model is automatically loaded in 4-bit (bitsandbytes) — dropping from ~18 GB to ~6-8 GB with minimal quality loss. A 4090 (24 GB) runs the full bf16 model with headroom to spare.
-- **Still-frame skipping.** Chunks with no meaningful visual change (e.g. a parked car) are detected by comparing JPEG file sizes across sampled frames and skipped entirely — saving a full forward pass per chunk.
+- **预处理在模型处理前压缩片段。** 每个约 30 秒的片段在嵌入前通过 ffmpeg 降分辨率至 480p 5fps。约 19 MB 的行车记录仪片段变为约 1 MB——像素量减少 95%。模型推理时间与像素量成正比，而非视频时长，因此这是最大的加速项。
+- **低帧采样。** 视频处理器每个片段最多向模型发送 32 帧（`fps=1.0`、`max_frames=32`）。30 秒片段产生约 30 帧——而非数百帧。
+- **MRL 维度截断。** Qwen3-VL-Embedding 支持 [Matryoshka 表示学习](https://arxiv.org/abs/2205.13147)。仅保留每个嵌入的前 768 维并做 L2 归一化，减少 ChromaDB 中的存储和距离计算。
+- **自动量化。** 在 VRAM 有限的 NVIDIA GPU 上，8B 模型自动以 4-bit 加载（bitsandbytes）——从约 18 GB 降至约 6-8 GB，质量损失极小。4090（24 GB）可运行完整 bf16 模型且绰绰有余。
+- **静帧跳过。** 通过比较采样帧的 JPEG 文件大小，检测无视觉变化的片段（如停放的车辆）并完全跳过——每片段节省一次完整前向传播。
 
-With all of this, expect ~2-5s per chunk on an A100 and ~3-8s on a T4. On a 4090, the 8B model in bf16 should be in the low single digits per chunk.
+综合以上优化，A100 上每片段约 2-5 秒，T4 上约 3-8 秒。4090 上 8B bf16 模型每片段应在个位数秒内。
 
-### Tesla Metadata Overlay
+### Tesla 元数据叠加
 
-Burn speed, location, and time onto trimmed clips:
+将速度、位置和时间信息烧录到裁剪片段上：
 
 ```bash
-sentrysearch search "car cutting me off" --overlay
+sentrysearch search "别我的车" --overlay
 ```
 
-This extracts telemetry embedded in Tesla dashcam files (speed, GPS) and renders a HUD overlay. The overlay shows:
+该功能提取 Tesla 行车记录仪文件中嵌入的遥测数据（速度、GPS）并渲染 HUD 叠加。叠加显示：
 
-- **Top center:** speed and MPH label on a light gray card
-- **Below card:** date and time (12-hour with AM/PM)
-- **Top left:** city and road name (via reverse geocoding)
+- **顶部居中：** 速度和 MPH 标签（浅灰色卡片）
+- **卡片下方：** 日期和时间（12 小时制，含 AM/PM）
+- **左上角：** 城市和道路名称（通过逆地理编码）
 
 ![tesla overlay](docs/tesla-overlay.png)
 
-Requirements:
+要求：
 
-- Tesla firmware 2025.44.25 or later, HW3+
-- SEI metadata is only present in driving footage (not parked/Sentry Mode)
-- Reverse geocoding uses [OpenStreetMap's Nominatim API](https://nominatim.openstreetmap.org/) via geopy (optional)
+- Tesla 固件 2025.44.25 或更高版本，HW3+
+- SEI 元数据仅在行驶画面中存在（不在驻车/Sentry 模式录像中）
+- 逆地理编码使用 [OpenStreetMap 的 Nominatim API](https://nominatim.openstreetmap.org/)，通过 geopy 实现（可选）
 
-Install with Tesla overlay support:
+安装 Tesla 叠加支持：
 
 ```bash
 uv tool install ".[tesla]"
 ```
 
-Without geopy, the overlay still works but omits the city/road name.
+未安装 geopy 时叠加仍可工作，但省略城市/道路名称。
 
-Source: [teslamotors/dashcam](https://github.com/teslamotors/dashcam)
+来源：[teslamotors/dashcam](https://github.com/teslamotors/dashcam)
 
-### Managing the index
+### 管理索引
 
 ```bash
-# Show index info (files marked [missing] no longer exist on disk)
+# 显示索引信息（标记 [missing] 的文件在磁盘上已不存在）
 sentrysearch stats
 
-# Remove specific files by path substring
+# 按路径子串移除指定文件
 sentrysearch remove path/to/footage
 
-# Wipe the entire index
+# 清空整个索引
 sentrysearch reset
 ```
 
-All three commands also accept `--segmentation chunk|shot` to target a specific index mode.
+三个命令均支持 `--segmentation chunk|shot` 指定目标索引模式。
 
-### Verbose mode
+### 详细模式
 
-Add `--verbose` to either command for debug info (embedding dimensions, API response times, similarity scores).
+在命令后添加 `--verbose` 可查看调试信息（嵌入维度、API 响应时间、相似度分数）。
 
-## How is this possible?
+## 这如何实现？
 
-All supported backends — Gemini Embedding 2, Doubao ARK, Qwen VL, and the local Qwen3-VL-Embedding — can natively embed video: raw video pixels are projected into the same vector space as text queries. There's no transcription, no frame captioning, no text middleman. A text query like "red truck at a stop sign" is directly comparable to a 30-second video clip at the vector level. This is what makes sub-second semantic search over hours of footage practical.
+所有支持的后端——Gemini Embedding 2、Doubao ARK、Qwen VL 和本地 Qwen3-VL-Embedding——都能原生嵌入视频：原始视频像素被投影到与文本查询相同的向量空间中。无需转录、无需帧描述、没有文本中间人。"红灯处停着的红色卡车"这样的文本查询可以直接在向量层面与 30 秒的视频片段进行比较。正是这一点使得对数小时素材的亚秒级语义搜索成为可能。
 
-## Cost
+## 费用
 
-Indexing 1 hour of footage costs ~$2.84 with Gemini's embedding API (default settings: 30s chunks, 5s overlap):
+使用 Gemini Embedding API 索引 1 小时视频素材约花费 $2.84（默认设置：30 秒片段，5 秒重叠）：
 
-> 1 hour = 3,600 seconds of video = 3,600 frames processed by the model.
-> 3,600 frames × $0.00079 = ~$2.84/hr
+> 1 小时 = 3,600 秒视频 = 模型处理 3,600 帧。
+> 3,600 帧 × $0.00079 = 约 $2.84/小时
 
-The Gemini API natively extracts and tokenizes exactly 1 frame per second from uploaded video, regardless of the file's actual frame rate. The preprocessing step (which downscales chunks to 480p at 5fps via ffmpeg) is a local/bandwidth optimization — it keeps payload sizes small so API requests are fast and don't timeout — but does not change the number of frames the API processes.
+Gemini API 从上传的视频中原生提取并编码每秒正好 1 帧，与视频实际帧率无关。预处理步骤（通过 ffmpeg 将片段降至 480p 5fps）是本地/带宽优化——保持请求体较小，使 API 请求快速且不超时——但不改变 API 处理的帧数。
 
-Two built-in optimizations help reduce costs in different ways:
+两项内置优化以不同方式降低费用：
 
-- **Preprocessing** (on by default) — chunks are downscaled to 480p at 5fps before uploading. Since the API processes at 1fps regardless, this only reduces upload size and transfer time, not the number of frames billed. It primarily improves speed and prevents request timeouts.
-- **Still-frame skipping** (on by default) — chunks with no meaningful visual change (e.g. a parked car) are skipped entirely. This saves real API calls and directly reduces cost. The savings depend on your footage — Sentry Mode recordings with hours of idle time benefit the most, while action-packed driving footage may have nothing to skip.
+- **预处理**（默认开启）——上传前将片段降至 480p 5fps。由于 API 无论如何以 1fps 处理，这仅减少上传大小和传输时间，不影响计费帧数。主要提升速度并防止请求超时。
+- **静帧跳过**（默认开启）——完全跳过无视觉变化的片段（如停放的车辆）。这节省实际的 API 调用，直接降低费用。节省量取决于素材——包含数小时空闲时间的 Sentry 模式录像受益最大，而全程行驶的画面可能没有可跳过的内容。
 
-Search queries are negligible (text embedding only).
+搜索查询的费用可忽略（仅文本嵌入）。
 
-Tuning options:
+调优选项：
 
-- `--chunk-duration` / `--overlap` — longer chunks with less overlap = fewer API calls = lower cost
-- `--no-skip-still` — embed every chunk even if nothing is happening
-- `--target-resolution` / `--target-fps` — adjust preprocessing quality
-- `--no-preprocess` — send raw chunks to the API
+- `--chunk-duration` / `--overlap` — 更长的片段加更少的重叠 = 更少的 API 调用 = 更低费用
+- `--no-skip-still` — 嵌入每个片段，即使画面无变化
+- `--target-resolution` / `--target-fps` — 调整预处理质量
+- `--no-preprocess` — 发送原始片段到 API
 
-## Known Warnings (harmless)
+## 已知警告（无害）
 
-The local backend may print warnings during indexing and search. These are cosmetic and don't affect results:
+本地后端在索引和搜索时可能输出警告。这些是外观问题，不影响结果：
 
-- **`MPS: nonzero op is not natively supported`** — A known PyTorch limitation on Apple Silicon. The operation falls back to CPU for one step; everything else stays on the GPU. No impact on output quality.
-- **`video_reader_backend torchcodec error, use torchvision as default`** — torchcodec can't find a compatible FFmpeg on macOS. The video processor falls back to torchvision automatically. This is expected and produces identical results.
-- **`You are sending unauthenticated requests to the HF Hub`** — The model downloads from Hugging Face without a token. Download speeds may be slightly lower, but the model loads fine. Set a `HF_TOKEN` environment variable to silence this if it bothers you.
+- **`MPS: nonzero op is not natively supported`** — Apple Silicon 上的已知 PyTorch 限制。该操作回退到 CPU 执行一步；其余仍在 GPU 上。不影响输出质量。
+- **`video_reader_backend torchcodec error, use torchvision as default`** — torchcodec 在 macOS 上找不到兼容的 FFmpeg。视频处理器自动回退到 torchvision。这是预期行为，结果相同。
+- **`You are sending unauthenticated requests to the HF Hub`** — 模型从 Hugging Face 下载时未使用令牌。下载速度可能略低，但模型可正常加载。设置 `HF_TOKEN` 环境变量可消除此提示。
 
-## Limitations & Future Work
+## 限制与未来计划
 
-- **Still-frame detection is heuristic** — it uses JPEG file size comparison across sampled frames. It may occasionally skip chunks with subtle motion or embed chunks that are truly static. Disable with `--no-skip-still` if you need every chunk indexed.
-- **Search quality depends on chunk boundaries** — if an event spans two chunks, the overlapping window helps but isn't perfect. Smarter chunking (e.g. scene detection) could improve this.
-- **Gemini Embedding 2 is in preview** — API behavior and pricing may change.
+- **静帧检测是启发式的** — 它使用采样帧的 JPEG 文件大小比较。偶尔可能跳过有微弱运动的片段或嵌入真正静态的片段。如需索引每个片段，请使用 `--no-skip-still`。
+- **搜索质量取决于片段边界** — 如果一个事件跨越两个片段，重叠窗口有帮助但不完美。更智能的分块（如场景检测）可以改善此问题。
+- **Gemini Embedding 2 处于预览阶段** — API 行为和定价可能变更。
 
-## Compatibility
+## 兼容性
 
-This works with `.mp4` and `.mov` footage, not just Tesla Sentry Mode. The directory scanner recursively finds both file types regardless of folder structure.
+支持 `.mp4` 和 `.mov` 格式的视频素材，不仅限于 Tesla Sentry 模式。目录扫描器会递归查找这两种文件类型，不受文件夹结构影响。
 
-## Requirements
+## 系统要求
 
 - Python 3.11+
-- `ffmpeg` on PATH, or use bundled ffmpeg via `imageio-ffmpeg` (installed by default)
-- **Gemini backend:** Gemini API key ([get one free](https://aistudio.google.com/apikey))
-- **Doubao backend:** ARK API key ([get one](https://console.volcengine.com/ark))
-- **Qwen backend:** DashScope API key ([get one](https://bailian.console.aliyun.com/))
-- **Local backend:**
-  - GPU with CUDA or Apple Metal (see [hardware table](#local-backend-no-api-key-needed) for VRAM/RAM requirements)
-  - **macOS:** `brew install ffmpeg` (required by the video decoder)
-  - **Linux/Windows:** no extra system dependencies
+- `ffmpeg` 在 PATH 中，或使用内置 ffmpeg（通过 `imageio-ffmpeg`，默认安装）
+- **Gemini 后端：** Gemini API Key（[免费获取](https://aistudio.google.com/apikey)）
+- **Doubao 后端：** ARK API Key（[获取地址](https://console.volcengine.com/ark)）
+- **Qwen 后端：** DashScope API Key（[获取地址](https://bailian.console.aliyun.com/)）
+- **本地后端：**
+  - 支持 CUDA 或 Apple Metal 的 GPU（VRAM/RAM 要求见[硬件表](#本地后端无需-api-key)）
+  - **macOS：** `brew install ffmpeg`（视频解码器需要）
+  - **Linux/Windows：** 无额外系统依赖
