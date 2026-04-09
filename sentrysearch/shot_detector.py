@@ -43,9 +43,9 @@ def _load_transnetv2():
             return TransNetV2
         except ModuleNotFoundError as second_exc:
             raise ShotDetectionUnavailableError(
-                "Shot detection requires optional dependencies. "
-                "Install them with `uv tool install \".[shots]\"` or "
-                "`pip install sentrysearch[shots]`."
+                "Shot detection requires the transnetv2-pytorch package. "
+                "Install it with `uv tool install .` or "
+                "`pip install sentrysearch`."
             ) from second_exc
         except Exception as exc:  # pragma: no cover - environment specific
             raise ShotDetectionError(f"Failed to load TransNetV2: {exc}") from exc
@@ -55,9 +55,38 @@ def _load_transnetv2():
 
 def _get_video_fps(video_path: str) -> float:
     """Return the video stream frame rate."""
+    from .chunker import _get_ffmpeg_executable
+
+    ffmpeg_exe = _get_ffmpeg_executable()
+    # ffprobe lives alongside ffmpeg; try it first, then fall back to ffmpeg
     ffprobe_exe = shutil.which("ffprobe")
     if not ffprobe_exe:
-        raise ShotDetectionError("ffprobe is required for shot detection but was not found.")
+        # Derive ffprobe path from the ffmpeg we found
+        import os
+
+        candidate = ffmpeg_exe.replace("ffmpeg", "ffprobe")
+        if os.path.isfile(candidate):
+            ffprobe_exe = candidate
+    if not ffprobe_exe:
+        # Fall back to using ffmpeg directly to get stream info
+        result = subprocess.run(
+            [ffmpeg_exe, "-i", video_path],
+            capture_output=True,
+            text=True,
+        )
+        match = __import__("re").search(
+            r"(\d+(?:\.\d+)?)\s*fps|(\d+)/(\d+)\s*tbr",
+            result.stderr,
+        )
+        if match:
+            if match.group(1):
+                return float(match.group(1))
+            if match.group(2) and match.group(3):
+                return float(match.group(2)) / float(match.group(3))
+        raise ShotDetectionError(
+            "Could not determine video frame rate for shot detection. "
+            "Install ffmpeg system-wide for best compatibility."
+        )
 
     result = subprocess.run(
         [

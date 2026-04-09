@@ -14,11 +14,11 @@ dependencies = [
     "imageio-ffmpeg>=0.5",
     "protobuf>=4.0,<7",
     "yt-dlp>=2025.3.31",
+    "transnetv2-pytorch>=1.0.5",
 ]
 
 [project.optional-dependencies]
 tesla = ["geopy"]
-shots = ["transnetv2-pytorch>=1.0.5"]
 local = [
     "torch>=2.0",
     "torchvision>=0.15,<0.22",

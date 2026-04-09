@@ -25,17 +25,34 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 
-2. 克隆并安装：
+2. 安装 ffmpeg（视频分块和裁剪必需）：
+
+**macOS：**
+```bash
+brew install ffmpeg
+```
+
+**Ubuntu/Debian：**
+```bash
+sudo apt install ffmpeg
+```
+
+**Windows：**
+```powershell
+winget install ffmpeg
+```
+
+> 如果系统未安装 ffmpeg，将自动使用内置的 `imageio-ffmpeg` 作为 fallback（部分功能如镜头检测的帧率探测需要系统 ffmpeg）。
+
+3. 克隆并安装：
 
 ```bash
 git clone https://github.com/ssrajadh/sentrysearch.git
 cd sentrysearch
 uv tool install .
-# 可选：TransNetV2 镜头检测 / 分割
-uv tool install ".[shots]"
 ```
 
-3. 配置 API Key（或[使用本地模型](#本地后端无需-api-key)）：
+4. 配置 API Key（或[使用本地模型](#本地后端无需-api-key)）：
 
 ```bash
 sentrysearch init
@@ -54,7 +71,7 @@ sentrysearch init --backend qwen      # Qwen VL（DashScope / 阿里云）
 | **doubao** | `ARK_API_KEY` | [console.volcengine.com/ark](https://console.volcengine.com/ark) |
 | **qwen** | `DASHSCOPE_API_KEY` | [bailian.console.aliyun.com](https://bailian.console.aliyun.com/) |
 
-4. 索引视频素材：
+5. 索引视频素材：
 
 ```bash
 sentrysearch index /path/to/footage
@@ -67,15 +84,13 @@ sentrysearch index /path/to/footage --backend doubao
 sentrysearch index /path/to/footage --backend qwen
 ```
 
-5. 搜索：
+6. 搜索：
 
 ```bash
 sentrysearch search "闯红灯的红色卡车"
 ```
 
 搜索会自动从索引中检测后端——索引后无需额外参数。
-
-视频分块和裁剪需要 ffmpeg。如果系统未全局安装 ffmpeg，将自动使用内置的 `imageio-ffmpeg`。
 
 > **手动配置：** 如果不想使用 `sentrysearch init`，可以复制 `.env.example` 为 `.env`，手动填入从 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) 获取的 API Key。
 
@@ -128,7 +143,7 @@ Indexed 12 new chunks from 3 files. Total: 12 chunks from 3 files.
 **分段模式：**
 
 - 默认：固定时间窗口（`--segmentation chunk`）
-- `--segmentation shot` — 按检测到的镜头分段索引，而非固定窗口（需要 `.[shots]` 扩展）
+- `--segmentation shot` — 按检测到的镜头分段索引，而非固定窗口
 
 **示例：完整的 Qwen 流程**
 
@@ -165,11 +180,7 @@ sentrysearch search "闯红灯的车辆" --rerank
 
 ### TransNetV2 镜头检测 / 分割
 
-安装可选的镜头检测扩展：
-
-```bash
-uv tool install ".[shots]"
-```
+镜头检测功能已包含在默认安装中，无需额外步骤。
 
 检测镜头边界：
 
@@ -301,11 +312,7 @@ sentrysearch yt-dlp --help
 
 > **不确定？** Mac 上使用 `".[local]"`。NVIDIA 上使用 `".[local-quantized]"`——4-bit 量化兼容最广泛的 NVIDIA 硬件，质量损失极小。（bitsandbytes 需要 CUDA，不支持 Mac/MPS。）
 
-**Mac 前置条件：** 安装系统 FFmpeg（本地模型的视频处理器需要——Gemini 后端使用内置 ffmpeg）：
-
-```bash
-brew install ffmpeg
-```
+**Mac 前置条件：** 确保已安装系统 FFmpeg（已在[快速开始](#快速开始)第 2 步中安装）。本地模型的视频处理器需要系统 ffmpeg；Gemini 后端则使用内置 ffmpeg。
 
 使用 `--backend local` 索引并搜索——无需额外参数：
 
