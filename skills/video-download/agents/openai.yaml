@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Download"
+  short_description: "通过 sentrysearch yt-dlp 下载在线视频到本地。"
+  default_prompt: "使用这个 skill 通过 sentrysearch yt-dlp 下载指定在线视频资源。"

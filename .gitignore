@@ -16,3 +16,4 @@ notebooks/
 htmlcov/
 coverage.xml
 .coverage
+.omx/
