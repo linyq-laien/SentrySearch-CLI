@@ -233,6 +233,7 @@ def segment_video_shots(
             output_path=clip_path,
             padding=0.0,
             prefer_reencode=True,
+            require_reencode=True,
         )
         segments.append({
             "chunk_path": clip_path,

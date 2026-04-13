@@ -1,5 +1,6 @@
 """Tests for sentrysearch.trimmer."""
 
+import json
 import os
 import subprocess
 from unittest.mock import patch
@@ -89,7 +90,43 @@ class TestTrimClip:
         first_call = mock_run.call_args_list[0].args[0]
         assert first_call[0] == "ffmpeg"
         assert "-c:v" in first_call
-        assert "mpeg4" in first_call
+        assert "libx264" in first_call
+        assert "+faststart" in first_call
+
+    def test_require_reencode_uses_browser_compatible_h264(self, tiny_video, tmp_path):
+        output = str(tmp_path / "trimmed_h264.mp4")
+        result = trim_clip(
+            tiny_video,
+            0.5,
+            2.5,
+            output,
+            padding=0.0,
+            prefer_reencode=True,
+            require_reencode=True,
+        )
+
+        probe = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name,codec_tag_string,pix_fmt",
+                "-of",
+                "json",
+                result,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        payload = json.loads(probe.stdout)
+        stream = payload["streams"][0]
+        assert stream["codec_name"] == "h264"
+        assert stream["codec_tag_string"] == "avc1"
+        assert stream["pix_fmt"] == "yuv420p"
 
 
 class TestTrimTopResult:

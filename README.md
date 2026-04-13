@@ -160,6 +160,16 @@ sentrysearch index /path/to/footage --segmentation shot
 sentrysearch search "别车的车辆"
 ```
 
+**示例：本地索引后直接发布到 video-saas**
+
+```bash
+export VIDEO_SAAS_BASE_URL=http://localhost:8000
+export VIDEO_SAAS_INTEGRATION_KEY=int_xxx
+export VIDEO_SAAS_INTEGRATION_SECRET=secret_xxx
+
+sentrysearch index /path/to/footage --segmentation shot --publish-saas
+```
+
 **示例：Qwen 后端 + 重排序**
 
 ```bash
@@ -177,6 +187,14 @@ sentrysearch search "闯红灯的车辆" --rerank
 - `--target-resolution 480` — 预处理目标高度（像素）
 - `--target-fps 5` — 预处理目标帧率
 - `--no-skip-still` — 嵌入所有片段，包括无视觉变化的静帧
+- `--publish-saas` — 在本地分段和 embedding 之后，把每个片段上传到 video-saas（注册 source video、申请上传会话、上传到 R2、注册 segment）
+
+启用 `--publish-saas` 时，需要以下环境变量：
+
+- `VIDEO_SAAS_BASE_URL`
+- `VIDEO_SAAS_INTEGRATION_KEY`
+- `VIDEO_SAAS_INTEGRATION_SECRET`
+- 可选：`VIDEO_SAAS_TIMEOUT_SECONDS`
 
 ### TransNetV2 镜头检测 / 分割
 

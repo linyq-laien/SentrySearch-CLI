@@ -14,6 +14,7 @@ def trim_clip(
     output_path: str,
     padding: float = 2.0,
     prefer_reencode: bool = False,
+    require_reencode: bool = False,
 ) -> str:
     """Extract a segment from the original source video using ffmpeg.
 
@@ -28,6 +29,7 @@ def trim_clip(
         output_path: Where to write the trimmed clip.
         padding: Extra seconds to include before/after the match window.
         prefer_reencode: Try re-encoding before stream-copy.
+        require_reencode: Only accept re-encoded output, never stream-copy fallback.
 
     Returns:
         The *output_path* on success.
@@ -68,8 +70,11 @@ def trim_clip(
         "-i", source_file,
         "-ss", str(padded_start),
         "-t", str(length),
-        "-c:v", "mpeg4",
-        "-q:v", "5",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
         "-c:a", "aac",
         "-b:a", "128k",
         output_path,
@@ -89,7 +94,9 @@ def trim_clip(
         ("reencode", reencode_args),
         ("copy_safe", copy_safe_args),
     ]
-    if prefer_reencode:
+    if require_reencode:
+        attempt_order = [("reencode", reencode_args)]
+    elif prefer_reencode:
         attempt_order = [
             ("reencode", reencode_args),
             ("copy_fast", copy_fast_args),
@@ -117,7 +124,7 @@ def trim_clip(
     # All attempts failed - provide helpful error message
     error_msg = (
         f"Failed to trim video clip from {source_file}.\n"
-        f"Tried 3 different ffmpeg approaches but none succeeded.\n\n"
+        f"Tried {len(attempt_order)} different ffmpeg approaches but none succeeded.\n\n"
         f"ffmpeg stderr from last attempt:\n{final_result.stderr}"
     )
     raise RuntimeError(error_msg)

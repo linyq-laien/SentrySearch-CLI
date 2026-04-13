@@ -56,6 +56,7 @@ def _handle_error(e: Exception) -> None:
     from .qwen_embedder import QwenAPIKeyError, QwenQuotaError
     from .qwen_reranker import QwenRerankError
     from .qwen_storage import QwenStorageUploadError
+    from .saas_client import VideoSaaSConfigError, VideoSaaSRequestError
     from .shot_detector import ShotDetectionUnavailableError
     from .store import BackendMismatchError
 
@@ -81,6 +82,9 @@ def _handle_error(e: Exception) -> None:
         click.secho("Error: " + str(e), fg="yellow", err=True)
         raise SystemExit(1)
     if isinstance(e, (QwenStorageUploadError, QwenRerankError)):
+        click.secho("Error: " + str(e), fg="red", err=True)
+        raise SystemExit(1)
+    if isinstance(e, (VideoSaaSConfigError, VideoSaaSRequestError)):
         click.secho("Error: " + str(e), fg="red", err=True)
         raise SystemExit(1)
     if isinstance(e, LocalModelError):
@@ -396,9 +400,11 @@ def label(path, output_dir, model, overwrite, verbose):
                    "(default: auto-detect from hardware). Implies --backend local.")
 @click.option("--quantize/--no-quantize", default=None,
               help="Enable/disable 4-bit quantization for local backend (default: auto-detect).")
+@click.option("--publish-saas/--no-publish-saas", default=False, show_default=True,
+              help="After local indexing, upload each segment to video-saas via its ingestion API.")
 @click.option("--verbose", is_flag=True, help="Show debug info.")
 def index(directory, segmentation, chunk_duration, overlap, shot_threshold, preprocess, target_resolution,
-          target_fps, skip_still, backend, model, quantize, verbose):
+          target_fps, skip_still, backend, model, quantize, publish_saas, verbose):
     """Index supported video files in DIRECTORY for searching."""
     from .chunker import (
         SUPPORTED_VIDEO_EXTENSIONS,
@@ -410,6 +416,11 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
     )
     from .embedder import get_embedder, reset_embedder
     from .local_embedder import detect_default_model, normalize_model_key
+    from .saas_client import (
+        VideoSaaSClient,
+        build_external_segment_id,
+        guess_content_type,
+    )
     from .store import SentryStore
 
     try:
@@ -431,6 +442,7 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
         store_model = _resolve_store_model(backend, model)
 
         embedder = get_embedder(backend, model=model, quantize=quantize)
+        saas_client = VideoSaaSClient.from_env() if publish_saas else None
 
         if os.path.isfile(directory):
             videos = [os.path.abspath(directory)]
@@ -460,9 +472,14 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
             abs_path = os.path.abspath(video_path)
             basename = os.path.basename(video_path)
 
-            if store.is_indexed(abs_path):
+            if store.is_indexed(abs_path) and not publish_saas:
                 click.echo(f"Skipping ({file_idx}/{total_files}): {basename} (already indexed)")
                 continue
+            if store.is_indexed(abs_path) and publish_saas:
+                click.echo(
+                    f"Reprocessing ({file_idx}/{total_files}): {basename} "
+                    "(already indexed locally, publishing to video-saas)",
+                )
 
             if segmentation == "shot":
                 chunks = segment_video_shots(abs_path, threshold=shot_threshold)
@@ -473,6 +490,17 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
 
             if verbose:
                 click.echo(f"  [verbose] {basename}: duration split into {num_chunks} chunks", err=True)
+
+            source_video = None
+            if saas_client and chunks:
+                duration_ms = int(round(max(chunk["end_time"] for chunk in chunks) * 1000))
+                source_video = saas_client.register_source_video(
+                    source_file=abs_path,
+                    duration_ms=duration_ms,
+                    backend=backend,
+                    model=store_model,
+                    segmentation=segmentation,
+                )
 
             # Track files to clean up after processing
             files_to_cleanup = []
@@ -516,6 +544,56 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
 
                 embedding = embedder.embed_video_chunk(embed_path, verbose=verbose)
                 embedded.append({**chunk, "embedding": embedding})
+
+                if saas_client and source_video is not None:
+                    external_segment_id = build_external_segment_id(
+                        source_file=abs_path,
+                        start_time=float(chunk["start_time"]),
+                        end_time=float(chunk["end_time"]),
+                        segmentation=segmentation,
+                        backend=backend,
+                        model=store_model,
+                    )
+                    original_filename = os.path.basename(chunk["chunk_path"])
+                    upload_session = saas_client.create_segment_upload_session(
+                        source_video_id=source_video["id"],
+                        external_segment_id=external_segment_id,
+                        original_filename=original_filename,
+                        content_type=guess_content_type(chunk["chunk_path"]),
+                    )
+                    saas_client.upload_segment_file(
+                        file_path=chunk["chunk_path"],
+                        upload_url=upload_session["upload_url"],
+                        upload_headers=upload_session.get("upload_headers"),
+                    )
+                    segment_index = chunk.get("segment_index")
+                    title_suffix = (
+                        f"shot {segment_index:03d}"
+                        if isinstance(segment_index, int)
+                        else f"{float(chunk['start_time']):.1f}s-{float(chunk['end_time']):.1f}s"
+                    )
+                    segment_title = f"{os.path.splitext(basename)[0]} {title_suffix}"
+                    segment_summary = (
+                        f"Segment from {basename} covering "
+                        f"{float(chunk['start_time']):.1f}s to {float(chunk['end_time']):.1f}s."
+                    )
+                    saas_client.register_segment(
+                        upload_session_id=upload_session["id"],
+                        callback_token=upload_session["callback_token"],
+                        source_video_id=source_video["id"],
+                        external_segment_id=external_segment_id,
+                        title=segment_title,
+                        summary=segment_summary,
+                        file_path=chunk["chunk_path"],
+                        start_time=float(chunk["start_time"]),
+                        end_time=float(chunk["end_time"]),
+                        embedding=embedding,
+                        backend=backend,
+                        model=store_model,
+                        segmentation=segmentation,
+                        segment_index=segment_index if isinstance(segment_index, int) else None,
+                    )
+
                 # Clean up chunk file after embedding
                 files_to_cleanup.append(chunk["chunk_path"])
 
@@ -596,6 +674,7 @@ def shots(video_path, threshold, output_dir, split, verbose):
                     output_path=clip_path,
                     padding=0.0,
                     prefer_reencode=True,
+                    require_reencode=True,
                 )
 
             click.echo(f"\nSaved {len(scenes)} shot clips to {output_dir}")

@@ -166,10 +166,19 @@ class TestSegmentVideoShots:
     def test_creates_one_clip_per_detected_shot(self, tiny_video, tmp_path):
         created = []
 
-        def fake_trim(source_file, start_time, end_time, output_path, padding=0.0, prefer_reencode=False):
+        def fake_trim(
+            source_file,
+            start_time,
+            end_time,
+            output_path,
+            padding=0.0,
+            prefer_reencode=False,
+            require_reencode=False,
+        ):
             assert source_file == os.path.abspath(tiny_video)
             assert padding == 0.0
             assert prefer_reencode is True
+            assert require_reencode is True
             created.append(output_path)
             with open(output_path, "wb") as f:
                 f.write(b"shot")
@@ -189,7 +198,16 @@ class TestSegmentVideoShots:
         shutil.rmtree(os.path.dirname(created[0]), ignore_errors=True)
 
     def test_falls_back_to_full_video_when_no_shots_detected(self, tiny_video):
-        def fake_trim(source_file, start_time, end_time, output_path, padding=0.0, prefer_reencode=False):
+        def fake_trim(
+            source_file,
+            start_time,
+            end_time,
+            output_path,
+            padding=0.0,
+            prefer_reencode=False,
+            require_reencode=False,
+        ):
+            assert require_reencode is True
             with open(output_path, "wb") as f:
                 f.write(b"shot")
             return output_path
