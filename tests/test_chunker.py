@@ -9,9 +9,11 @@ import pytest
 
 from sentrysearch.chunker import (
     _get_ffmpeg_executable,
+    _parse_last_ffmpeg_frame_count,
     _get_video_duration,
     _parse_duration_from_ffmpeg_output,
     chunk_video,
+    is_still_frame_chunk,
     preprocess_chunk,
     segment_video_shots,
     scan_directory,
@@ -41,6 +43,15 @@ class TestParseDuration:
         stderr = "test.mp4: No such file or directory"
         with pytest.raises(FileNotFoundError, match="Video file not found"):
             _parse_duration_from_ffmpeg_output(stderr)
+
+
+class TestParseLastFfmpegFrameCount:
+    def test_returns_last_reported_frame_count(self):
+        stderr = "frame=    1\\nframe=   28\\n"
+        assert _parse_last_ffmpeg_frame_count(stderr) == 28
+
+    def test_returns_none_when_missing(self):
+        assert _parse_last_ffmpeg_frame_count("no frame count here") is None
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +195,15 @@ class TestSegmentVideoShots:
                 f.write(b"shot")
             return output_path
 
-        with patch("sentrysearch.shot_detector.detect_shot_scenes", return_value=[(0.0, 1.0), (1.0, 2.5)]), \
+        with patch(
+            "sentrysearch.shot_detector.detect_shot_scenes",
+            side_effect=[
+                [(0.0, 1.0), (1.0, 2.5)],
+                [(0.0, 1.0)],
+                [(0.0, 1.5)],
+            ],
+        ), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=False), \
              patch("sentrysearch.trimmer.trim_clip", side_effect=fake_trim):
             segments = segment_video_shots(tiny_video, threshold=0.3)
 
@@ -194,6 +213,9 @@ class TestSegmentVideoShots:
         assert segments[0]["end_time"] == 1.0
         assert segments[0]["segment_index"] == 1
         assert segments[0]["segmentation"] == "shot"
+        assert segments[0]["segment_quality"] == "ok"
+        assert segments[0]["segment_quality_reason"] == "none"
+        assert segments[0]["segment_scene_count"] == 1
         assert all(os.path.isfile(segment["chunk_path"]) for segment in segments)
         shutil.rmtree(os.path.dirname(created[0]), ignore_errors=True)
 
@@ -212,7 +234,11 @@ class TestSegmentVideoShots:
                 f.write(b"shot")
             return output_path
 
-        with patch("sentrysearch.shot_detector.detect_shot_scenes", return_value=[]), \
+        with patch(
+            "sentrysearch.shot_detector.detect_shot_scenes",
+            side_effect=[[], [(0.0, 3.0)]],
+        ), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=False), \
              patch("sentrysearch.chunker._get_video_duration", return_value=3.0), \
              patch("sentrysearch.trimmer.trim_clip", side_effect=fake_trim):
             segments = segment_video_shots(tiny_video)
@@ -220,4 +246,95 @@ class TestSegmentVideoShots:
         assert len(segments) == 1
         assert segments[0]["start_time"] == 0.0
         assert segments[0]["end_time"] == 3.0
+        assert segments[0]["segment_quality"] == "ok"
         shutil.rmtree(os.path.dirname(segments[0]["chunk_path"]), ignore_errors=True)
+
+    def test_marks_subhalfsecond_shots_as_low_quality(self, tiny_video):
+        def fake_trim(
+            source_file,
+            start_time,
+            end_time,
+            output_path,
+            padding=0.0,
+            prefer_reencode=False,
+            require_reencode=False,
+        ):
+            with open(output_path, "wb") as f:
+                f.write(b"shot")
+            return output_path
+
+        with patch(
+            "sentrysearch.shot_detector.detect_shot_scenes",
+            return_value=[(0.0, 0.4)],
+        ), patch("sentrysearch.trimmer.trim_clip", side_effect=fake_trim):
+            segments = segment_video_shots(tiny_video)
+
+        assert len(segments) == 1
+        assert segments[0]["segment_quality"] == "low"
+        assert segments[0]["segment_quality_reason"] == "too_short"
+        assert segments[0]["segment_scene_count"] == 0
+        shutil.rmtree(os.path.dirname(segments[0]["chunk_path"]), ignore_errors=True)
+
+    def test_marks_still_segments_as_low_quality(self, tiny_video):
+        def fake_trim(
+            source_file,
+            start_time,
+            end_time,
+            output_path,
+            padding=0.0,
+            prefer_reencode=False,
+            require_reencode=False,
+        ):
+            with open(output_path, "wb") as f:
+                f.write(b"shot")
+            return output_path
+
+        with patch(
+            "sentrysearch.shot_detector.detect_shot_scenes",
+            return_value=[(0.0, 1.2)],
+        ), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=True), \
+             patch("sentrysearch.trimmer.trim_clip", side_effect=fake_trim):
+            segments = segment_video_shots(tiny_video)
+
+        assert len(segments) == 1
+        assert segments[0]["segment_quality"] == "low"
+        assert segments[0]["segment_quality_reason"] == "still_frame"
+        assert segments[0]["segment_scene_count"] == 1
+        shutil.rmtree(os.path.dirname(segments[0]["chunk_path"]), ignore_errors=True)
+
+    def test_marks_segments_with_internal_scene_cuts_as_low_quality(self, tiny_video):
+        def fake_trim(
+            source_file,
+            start_time,
+            end_time,
+            output_path,
+            padding=0.0,
+            prefer_reencode=False,
+            require_reencode=False,
+        ):
+            with open(output_path, "wb") as f:
+                f.write(b"shot")
+            return output_path
+
+        with patch(
+            "sentrysearch.shot_detector.detect_shot_scenes",
+            side_effect=[[(0.0, 2.5)], [(0.0, 1.0), (1.0, 2.5)]],
+        ), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=False), \
+             patch("sentrysearch.trimmer.trim_clip", side_effect=fake_trim):
+            segments = segment_video_shots(tiny_video)
+
+        assert len(segments) == 1
+        assert segments[0]["segment_quality"] == "low"
+        assert segments[0]["segment_quality_reason"] == "internal_scene_cut"
+        assert segments[0]["segment_scene_count"] == 2
+        shutil.rmtree(os.path.dirname(segments[0]["chunk_path"]), ignore_errors=True)
+
+
+class TestIsStillFrameChunk:
+    def test_detects_repeated_still_video(self, static_video):
+        assert is_still_frame_chunk(static_video) is True
+
+    def test_does_not_flag_dynamic_video(self, tiny_video):
+        assert is_still_frame_chunk(tiny_video) is False

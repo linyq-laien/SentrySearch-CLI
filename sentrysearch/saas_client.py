@@ -241,6 +241,7 @@ class VideoSaaSClient:
         model: str | None,
         segmentation: str,
         segment_index: int | None,
+        extra_extension_metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         start_ms = int(round(start_time * 1000))
         end_ms = int(round(end_time * 1000))
@@ -276,6 +277,7 @@ class VideoSaaSClient:
                 "index_backend": backend,
                 "segmentation": segmentation,
                 "segment_index": segment_index,
+                **(extra_extension_metadata or {}),
             },
         }
         return self._request(

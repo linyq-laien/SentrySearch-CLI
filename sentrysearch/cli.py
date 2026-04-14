@@ -54,6 +54,23 @@ def _require_publish_collection_only_with_publish_saas(
         )
 
 
+def _segment_quality_warning(chunk: dict) -> str | None:
+    """Return a user-facing warning for low-quality shot segments."""
+    if chunk.get("segment_quality") != "low":
+        return None
+
+    reason = chunk.get("segment_quality_reason", "unknown")
+    duration = float(chunk.get("segment_duration_seconds", 0.0))
+    if reason == "too_short":
+        return f"low-quality shot: duration {duration:.2f}s is below 0.50s"
+    if reason == "still_frame":
+        return "low-quality shot: segment appears to be a still/static scene"
+    if reason == "internal_scene_cut":
+        scene_count = int(chunk.get("segment_scene_count", 0))
+        return f"low-quality shot: validation detected {scene_count} scenes inside one segment"
+    return f"low-quality shot: {reason}"
+
+
 def _handle_error(e: Exception) -> None:
     """Print a user-friendly error and exit."""
     from .doubao_embedder import (
@@ -480,6 +497,7 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
         new_files = 0
         new_chunks = 0
         skipped_chunks = 0
+        low_quality_chunks = 0
 
         if verbose:
             click.echo(f"[verbose] DB path: {store._client._identifier}", err=True)
@@ -528,6 +546,11 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
             files_to_cleanup = []
 
             for chunk_idx, chunk in enumerate(chunks, 1):
+                quality_warning = _segment_quality_warning(chunk)
+                if quality_warning:
+                    low_quality_chunks += 1
+                    click.echo(f"  Warning: {quality_warning}", err=True)
+
                 if skip_still and is_still_frame_chunk(
                     chunk["chunk_path"], verbose=verbose,
                 ):
@@ -633,6 +656,17 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                         model=store_model,
                         segmentation=segmentation,
                         segment_index=segment_index if isinstance(segment_index, int) else None,
+                        extra_extension_metadata={
+                            key: value
+                            for key, value in {
+                                "segment_quality": chunk.get("segment_quality"),
+                                "segment_quality_reason": chunk.get("segment_quality_reason"),
+                                "segment_quality_checked": chunk.get("segment_quality_checked"),
+                                "segment_duration_seconds": chunk.get("segment_duration_seconds"),
+                                "segment_scene_count": chunk.get("segment_scene_count"),
+                            }.items()
+                            if value is not None
+                        },
                     )
                     segment_id = segment.get("id")
                     if not isinstance(segment_id, str) or not segment_id:
@@ -675,9 +709,14 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                 )
 
         stats = store.get_stats()
-        skipped_msg = f" (skipped {skipped_chunks} still)" if skipped_chunks else ""
+        summary_notes = []
+        if skipped_chunks:
+            summary_notes.append(f"skipped {skipped_chunks} still")
+        if low_quality_chunks:
+            summary_notes.append(f"flagged {low_quality_chunks} low-quality shot segments")
+        summary_suffix = f" ({', '.join(summary_notes)})" if summary_notes else ""
         click.echo(
-            f"\nIndexed {new_chunks} new chunks from {new_files} files{skipped_msg}. "
+            f"\nIndexed {new_chunks} new chunks from {new_files} files{summary_suffix}. "
             f"Total: {stats['total_chunks']} chunks from "
             f"{stats['unique_source_files']} files."
         )

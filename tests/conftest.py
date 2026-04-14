@@ -123,3 +123,24 @@ def longer_video(ffmpeg_exe, tmp_path_factory):
     )
     assert video_path.exists() and video_path.stat().st_size > 0
     return str(video_path)
+
+
+@pytest.fixture(scope="session")
+def static_video(ffmpeg_exe, tmp_path_factory):
+    """Generate a 3-second MP4 that is just one repeated still image."""
+    video_dir = tmp_path_factory.mktemp("videos")
+    video_path = video_dir / "static_3s.mp4"
+    subprocess.run(
+        [
+            ffmpeg_exe, "-y",
+            "-f", "lavfi",
+            "-i", "color=c=blue:size=64x64:rate=10:duration=3",
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            str(video_path),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    assert video_path.exists() and video_path.stat().st_size > 0
+    return str(video_path)

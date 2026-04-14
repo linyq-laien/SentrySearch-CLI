@@ -231,6 +231,90 @@ class TestIndexCommand:
         MockStore.assert_called_once_with(backend="gemini", model=None, segmentation="shot")
         mock_store.add_chunks.assert_called_once()
 
+    def test_index_shot_reports_low_quality_segments(self, runner, tmp_path):
+        d = tmp_path / "vids"
+        d.mkdir()
+        source = d / "test.mp4"
+        source.write_bytes(b"fake")
+
+        shot_dir = tmp_path / "shots"
+        shot_dir.mkdir()
+        shot_path = shot_dir / "shot_001.mp4"
+        shot_path.write_bytes(b"shot")
+
+        mock_store = MagicMock()
+        mock_store.is_indexed.return_value = False
+        mock_store.get_stats.return_value = {
+            "total_chunks": 1,
+            "unique_source_files": 1,
+        }
+        mock_embedder = MagicMock()
+        mock_embedder.embed_video_chunk.return_value = [0.1] * 768
+
+        with patch("sentrysearch.store.SentryStore", return_value=mock_store), \
+             patch("sentrysearch.embedder.get_embedder", return_value=mock_embedder), \
+             patch("sentrysearch.chunker.segment_video_shots", return_value=[{
+                 "chunk_path": str(shot_path),
+                 "source_file": str(source.resolve()),
+                 "start_time": 0.0,
+                 "end_time": 0.4,
+                 "segment_index": 1,
+                 "segmentation": "shot",
+                 "segment_quality": "low",
+                 "segment_quality_reason": "too_short",
+                 "segment_quality_checked": True,
+                 "segment_duration_seconds": 0.4,
+                 "segment_scene_count": 0,
+             }]), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=False):
+            result = runner.invoke(cli, ["index", str(d), "--segmentation", "shot", "--no-preprocess"])
+
+        assert result.exit_code == 0
+        assert "low-quality shot: duration 0.40s is below 0.50s" in result.output
+        assert "flagged 1 low-quality shot segments" in result.output
+
+    def test_index_shot_reports_still_frame_segments(self, runner, tmp_path):
+        d = tmp_path / "vids"
+        d.mkdir()
+        source = d / "test.mp4"
+        source.write_bytes(b"fake")
+
+        shot_dir = tmp_path / "shots"
+        shot_dir.mkdir()
+        shot_path = shot_dir / "shot_001.mp4"
+        shot_path.write_bytes(b"shot")
+
+        mock_store = MagicMock()
+        mock_store.is_indexed.return_value = False
+        mock_store.get_stats.return_value = {
+            "total_chunks": 1,
+            "unique_source_files": 1,
+        }
+        mock_embedder = MagicMock()
+        mock_embedder.embed_video_chunk.return_value = [0.1] * 768
+
+        with patch("sentrysearch.store.SentryStore", return_value=mock_store), \
+             patch("sentrysearch.embedder.get_embedder", return_value=mock_embedder), \
+             patch("sentrysearch.chunker.segment_video_shots", return_value=[{
+                 "chunk_path": str(shot_path),
+                 "source_file": str(source.resolve()),
+                 "start_time": 0.0,
+                 "end_time": 1.2,
+                 "segment_index": 1,
+                 "segmentation": "shot",
+                 "segment_quality": "low",
+                 "segment_quality_reason": "still_frame",
+                 "segment_quality_checked": True,
+                 "segment_duration_seconds": 1.2,
+                 "segment_scene_count": 1,
+             }]), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=False):
+            result = runner.invoke(cli, ["index", str(d), "--segmentation", "shot", "--no-preprocess"])
+
+        assert result.exit_code == 0
+        assert "low-quality shot: segment appears to be a still/static scene" in result.output
+        assert "flagged 1 low-quality shot segments" in result.output
+
     def test_index_publish_saas_uploads_segments(self, runner, tmp_path):
         d = tmp_path / "vids"
         d.mkdir()
@@ -282,6 +366,67 @@ class TestIndexCommand:
         mock_saas.create_segment_upload_session.assert_called_once()
         mock_saas.upload_segment_file.assert_called_once()
         mock_saas.register_segment.assert_called_once()
+        assert mock_saas.register_segment.call_args.kwargs["extra_extension_metadata"] == {}
+
+    def test_index_publish_saas_forwards_segment_quality_metadata(self, runner, tmp_path):
+        d = tmp_path / "vids"
+        d.mkdir()
+        source = d / "test.mp4"
+        source.write_bytes(b"fake")
+
+        shot_dir = tmp_path / "shots"
+        shot_dir.mkdir()
+        shot_path = shot_dir / "shot_001.mp4"
+        shot_path.write_bytes(b"shot-bytes")
+
+        mock_store = MagicMock()
+        mock_store.is_indexed.return_value = False
+        mock_store.get_stats.return_value = {
+            "total_chunks": 1,
+            "unique_source_files": 1,
+        }
+        mock_embedder = MagicMock()
+        mock_embedder.embed_video_chunk.return_value = [0.1] * 768
+        mock_saas = MagicMock()
+        mock_saas.register_source_video.return_value = {"id": "source-video-id"}
+        mock_saas.create_segment_upload_session.return_value = {
+            "id": "upload-session-id",
+            "callback_token": "callback-token",
+            "upload_url": "https://example.invalid/upload",
+            "upload_headers": {"Content-Type": "video/mp4"},
+        }
+        mock_saas.register_segment.return_value = {"id": "segment-id-1"}
+
+        with patch("sentrysearch.store.SentryStore", return_value=mock_store), \
+             patch("sentrysearch.embedder.get_embedder", return_value=mock_embedder), \
+             patch("sentrysearch.saas_client.VideoSaaSClient.from_env", return_value=mock_saas), \
+             patch("sentrysearch.chunker.segment_video_shots", return_value=[{
+                 "chunk_path": str(shot_path),
+                 "source_file": str(source.resolve()),
+                 "start_time": 0.0,
+                 "end_time": 2.0,
+                 "segment_index": 1,
+                 "segmentation": "shot",
+                 "segment_quality": "low",
+                 "segment_quality_reason": "internal_scene_cut",
+                 "segment_quality_checked": True,
+                 "segment_duration_seconds": 2.0,
+                 "segment_scene_count": 2,
+             }]), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=False):
+            result = runner.invoke(
+                cli,
+                ["index", str(d), "--segmentation", "shot", "--no-preprocess", "--publish-saas"],
+            )
+
+        assert result.exit_code == 0
+        assert mock_saas.register_segment.call_args.kwargs["extra_extension_metadata"] == {
+            "segment_quality": "low",
+            "segment_quality_reason": "internal_scene_cut",
+            "segment_quality_checked": True,
+            "segment_duration_seconds": 2.0,
+            "segment_scene_count": 2,
+        }
 
     def test_index_publish_saas_reprocesses_locally_indexed_files(self, runner, tmp_path):
         d = tmp_path / "vids"

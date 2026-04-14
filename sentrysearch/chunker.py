@@ -10,6 +10,16 @@ import tempfile
 from pathlib import Path
 
 SUPPORTED_VIDEO_EXTENSIONS = (".mp4", ".mov")
+MIN_SHOT_SEGMENT_DURATION_SECONDS = 0.5
+STILL_FRAME_RETAINED_RATIO_THRESHOLD = 0.1
+
+
+def _parse_last_ffmpeg_frame_count(stderr_text: str) -> int | None:
+    """Return the last reported ``frame=`` count from ffmpeg stderr."""
+    matches = re.findall(r"frame=\s*(\d+)", stderr_text)
+    if not matches:
+        return None
+    return int(matches[-1])
 
 
 def is_supported_video_file(path: str) -> bool:
@@ -235,6 +245,33 @@ def segment_video_shots(
             prefer_reencode=True,
             require_reencode=True,
         )
+        duration = float(end_time) - float(start_time)
+        quality_metadata = {
+            "segment_quality": "ok",
+            "segment_quality_reason": "none",
+            "segment_quality_checked": True,
+            "segment_duration_seconds": duration,
+            "segment_scene_count": 1,
+        }
+        if duration < MIN_SHOT_SEGMENT_DURATION_SECONDS:
+            quality_metadata.update({
+                "segment_quality": "low",
+                "segment_quality_reason": "too_short",
+                "segment_scene_count": 0,
+            })
+        elif is_still_frame_chunk(clip_path):
+            quality_metadata.update({
+                "segment_quality": "low",
+                "segment_quality_reason": "still_frame",
+            })
+        else:
+            validation_scenes = detect_shot_scenes(clip_path, threshold=threshold)
+            quality_metadata["segment_scene_count"] = len(validation_scenes)
+            if len(validation_scenes) > 1:
+                quality_metadata.update({
+                    "segment_quality": "low",
+                    "segment_quality_reason": "internal_scene_cut",
+                })
         segments.append({
             "chunk_path": clip_path,
             "source_file": video_path,
@@ -242,6 +279,7 @@ def segment_video_shots(
             "end_time": float(end_time),
             "segment_index": idx,
             "segmentation": "shot",
+            **quality_metadata,
         })
 
     return segments
@@ -249,17 +287,18 @@ def segment_video_shots(
 
 def is_still_frame_chunk(
     chunk_path: str,
-    threshold: float = 0.98,
+    threshold: float = STILL_FRAME_RETAINED_RATIO_THRESHOLD,
     verbose: bool = False,
 ) -> bool:
     """Check if a video chunk contains mostly still frames.
 
-    Extracts 3 evenly-spaced frames as JPEG and compares file sizes.
-    Similar JPEG sizes indicate similar visual content (still scene).
+    Runs ffmpeg's ``mpdecimate`` filter and checks how many frames remain
+    after near-duplicate frames are removed. A clip that is effectively one
+    still image encoded as a short video will retain very few unique frames.
 
     Args:
         chunk_path: Path to the video chunk.
-        threshold: Minimum size ratio (min/max) to consider frames similar.
+        threshold: Maximum retained-frame ratio to consider the clip still.
         verbose: Print frame sizes to stderr.
 
     Returns:
@@ -268,23 +307,21 @@ def is_still_frame_chunk(
     try:
         ffmpeg_exe = _get_ffmpeg_executable()
 
-        # Get total frame count: try parsing "frame=" progress line first,
-        # fall back to duration * fps for ffmpeg 7+ which changed the format.
-        result = subprocess.run(
+        total_result = subprocess.run(
             [ffmpeg_exe, "-i", chunk_path, "-map", "0:v:0",
              "-c", "copy", "-f", "null", "-"],
             capture_output=True, text=True, check=False,
         )
-        stderr = result.stderr
-        match = re.search(r"frame=\s*(\d+)", stderr)
-        if match:
-            total_frames = int(match.group(1))
+        stderr = total_result.stderr
+        total_frames = _parse_last_ffmpeg_frame_count(stderr)
+        if total_frames is not None:
+            total_frames = int(total_frames)
         else:
             # Estimate from duration and fps in stream info
             fps_match = re.search(r"(\d+(?:\.\d+)?)\s+fps", stderr)
             dur_match = re.search(
                 r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", stderr,
-            )
+             )
             if not fps_match or not dur_match:
                 return False
             fps = float(fps_match.group(1))
@@ -294,52 +331,35 @@ def is_still_frame_chunk(
         if total_frames < 3:
             return False
 
-        f1 = total_frames // 3
-        f2 = 2 * total_frames // 3
-
-        # Extract 3 frames as JPEG
-        tmp_dir = tempfile.mkdtemp(prefix="sentrysearch_still_")
-        out_pattern = os.path.join(tmp_dir, "frame_%03d.jpg")
-
-        subprocess.run(
+        decimated_result = subprocess.run(
             [
-                ffmpeg_exe, "-y",
+                ffmpeg_exe,
+                "-hide_banner",
                 "-i", chunk_path,
-                "-vf", f"select=eq(n\\,0)+eq(n\\,{f1})+eq(n\\,{f2})",
-                "-vsync", "vfr",
-                out_pattern,
+                "-vf", "mpdecimate",
+                "-an",
+                "-f", "null",
+                "-",
             ],
-            capture_output=True, check=True,
+            capture_output=True,
+            text=True,
+            check=False,
         )
-
-        # Collect frame file sizes
-        frames = sorted(
-            os.path.join(tmp_dir, f)
-            for f in os.listdir(tmp_dir)
-            if f.endswith(".jpg")
-        )
-        sizes = [os.path.getsize(f) for f in frames]
-
-        # Clean up
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-
-        if len(sizes) < 2:
+        retained_frames = _parse_last_ffmpeg_frame_count(decimated_result.stderr)
+        if retained_frames is None or retained_frames <= 0:
             return False
+
+        retained_ratio = retained_frames / total_frames
 
         if verbose:
             import sys
             print(
-                "    [verbose] still-detect frame sizes: "
-                + ", ".join(f"{s}B" for s in sizes),
+                "    [verbose] still-detect retained frames: "
+                f"{retained_frames}/{total_frames} ({retained_ratio:.3f})",
                 file=sys.stderr,
             )
 
-        min_size = min(sizes)
-        max_size = max(sizes)
-        if max_size == 0:
-            return False
-
-        return min_size / max_size >= threshold
+        return retained_ratio <= threshold
 
     except Exception:
         return False
