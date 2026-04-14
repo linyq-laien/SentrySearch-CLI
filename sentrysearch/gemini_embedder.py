@@ -139,6 +139,12 @@ class GeminiEmbedder(BaseEmbedder):
         elapsed = time.monotonic() - t0
         embedding = response.embeddings[0].values
 
+        if embedding is None:
+            raise RuntimeError(
+                f"Gemini returned null embedding for chunk {chunk_path}. "
+                f"The chunk may be empty or contain unsupported content."
+            )
+
         if verbose:
             size_kb = os.path.getsize(chunk_path) / 1024
             print(

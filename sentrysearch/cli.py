@@ -564,7 +564,26 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                     if embed_path != chunk["chunk_path"]:
                         files_to_cleanup.append(embed_path)
 
-                embedding = embedder.embed_video_chunk(embed_path, verbose=verbose)
+                try:
+                    embedding = embedder.embed_video_chunk(embed_path, verbose=verbose)
+                except RuntimeError as embed_err:
+                    click.echo(
+                        f"  Warning: skipping chunk {chunk_idx}/{num_chunks}: {embed_err}",
+                        err=True,
+                    )
+                    files_to_cleanup.append(chunk["chunk_path"])
+                    skipped_chunks += 1
+                    continue
+
+                if embedding is None:
+                    click.echo(
+                        f"  Warning: skipping chunk {chunk_idx}/{num_chunks} (null embedding)",
+                        err=True,
+                    )
+                    files_to_cleanup.append(chunk["chunk_path"])
+                    skipped_chunks += 1
+                    continue
+
                 embedded.append({**chunk, "embedding": embedding})
 
                 if saas_client and source_video is not None:
