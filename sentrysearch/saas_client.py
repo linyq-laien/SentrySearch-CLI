@@ -174,6 +174,18 @@ class VideoSaaSClient:
             json_body=body,
         )
 
+    def add_segments_to_container(
+        self,
+        *,
+        container_id: str,
+        segment_ids: list[str],
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/api/v1/containers/{container_id}/segments",
+            json_body={"segment_ids": segment_ids},
+        )
+
     def create_segment_upload_session(
         self,
         *,

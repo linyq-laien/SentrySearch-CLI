@@ -43,6 +43,17 @@ def _overlay_output_path(path: str) -> str:
     return f"{base}_overlay.mp4"
 
 
+def _require_publish_collection_only_with_publish_saas(
+    publish_saas: bool,
+    publish_collection: str | None,
+) -> None:
+    if publish_collection and not publish_saas:
+        raise click.BadOptionUsage(
+            "--publish-collection",
+            "--publish-collection requires --publish-saas.",
+        )
+
+
 def _handle_error(e: Exception) -> None:
     """Print a user-friendly error and exit."""
     from .doubao_embedder import (
@@ -402,9 +413,11 @@ def label(path, output_dir, model, overwrite, verbose):
               help="Enable/disable 4-bit quantization for local backend (default: auto-detect).")
 @click.option("--publish-saas/--no-publish-saas", default=False, show_default=True,
               help="After local indexing, upload each segment to video-saas via its ingestion API.")
+@click.option("--publish-collection", default=None, show_default=False,
+              help="Collection id in video-saas. Uploaded segments will be bound to it.")
 @click.option("--verbose", is_flag=True, help="Show debug info.")
 def index(directory, segmentation, chunk_duration, overlap, shot_threshold, preprocess, target_resolution,
-          target_fps, skip_still, backend, model, quantize, publish_saas, verbose):
+          target_fps, skip_still, backend, model, quantize, publish_saas, publish_collection, verbose):
     """Index supported video files in DIRECTORY for searching."""
     from .chunker import (
         SUPPORTED_VIDEO_EXTENSIONS,
@@ -418,12 +431,14 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
     from .local_embedder import detect_default_model, normalize_model_key
     from .saas_client import (
         VideoSaaSClient,
+        VideoSaaSRequestError,
         build_external_segment_id,
         guess_content_type,
     )
     from .store import SentryStore
 
     try:
+        _require_publish_collection_only_with_publish_saas(publish_saas, publish_collection)
         # --model implies --backend local
         if model is not None and backend is None:
             backend = "local"
@@ -443,6 +458,12 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
 
         embedder = get_embedder(backend, model=model, quantize=quantize)
         saas_client = VideoSaaSClient.from_env() if publish_saas else None
+        target_collection_id = publish_collection if saas_client and publish_collection else None
+        if target_collection_id is not None:
+            click.echo(
+                "Publishing to video-saas collection id: "
+                f"{target_collection_id}"
+            )
 
         if os.path.isfile(directory):
             videos = [os.path.abspath(directory)]
@@ -492,6 +513,7 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                 click.echo(f"  [verbose] {basename}: duration split into {num_chunks} chunks", err=True)
 
             source_video = None
+            published_segment_ids = []
             if saas_client and chunks:
                 duration_ms = int(round(max(chunk["end_time"] for chunk in chunks) * 1000))
                 source_video = saas_client.register_source_video(
@@ -577,7 +599,7 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                         f"Segment from {basename} covering "
                         f"{float(chunk['start_time']):.1f}s to {float(chunk['end_time']):.1f}s."
                     )
-                    saas_client.register_segment(
+                    segment = saas_client.register_segment(
                         upload_session_id=upload_session["id"],
                         callback_token=upload_session["callback_token"],
                         source_video_id=source_video["id"],
@@ -593,6 +615,12 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                         segmentation=segmentation,
                         segment_index=segment_index if isinstance(segment_index, int) else None,
                     )
+                    segment_id = segment.get("id")
+                    if not isinstance(segment_id, str) or not segment_id:
+                        raise VideoSaaSRequestError(
+                            "video-saas register segment response did not include a segment id"
+                        )
+                    published_segment_ids.append(segment_id)
 
                 # Clean up chunk file after embedding
                 files_to_cleanup.append(chunk["chunk_path"])
@@ -613,6 +641,19 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                 store.add_chunks(embedded)
                 new_files += 1
                 new_chunks += len(embedded)
+            if (
+                saas_client
+                and target_collection_id is not None
+                and published_segment_ids
+            ):
+                saas_client.add_segments_to_container(
+                    container_id=target_collection_id,
+                    segment_ids=published_segment_ids,
+                )
+                click.echo(
+                    f"Bound {len(published_segment_ids)} uploaded segments from {basename} "
+                    f"to collection id {target_collection_id}."
+                )
 
         stats = store.get_stats()
         skipped_msg = f" (skipped {skipped_chunks} still)" if skipped_chunks else ""

@@ -258,6 +258,7 @@ class TestIndexCommand:
             "upload_url": "https://example.invalid/upload",
             "upload_headers": {"Content-Type": "video/mp4"},
         }
+        mock_saas.register_segment.return_value = {"id": "segment-id-1"}
 
         with patch("sentrysearch.store.SentryStore", return_value=mock_store), \
              patch("sentrysearch.embedder.get_embedder", return_value=mock_embedder), \
@@ -309,6 +310,7 @@ class TestIndexCommand:
             "upload_url": "https://example.invalid/upload",
             "upload_headers": {"Content-Type": "video/mp4"},
         }
+        mock_saas.register_segment.return_value = {"id": "segment-id-1"}
 
         with patch("sentrysearch.store.SentryStore", return_value=mock_store), \
              patch("sentrysearch.embedder.get_embedder", return_value=mock_embedder), \
@@ -330,6 +332,79 @@ class TestIndexCommand:
         assert result.exit_code == 0
         mock_saas.register_segment.assert_called_once()
         assert "publishing to video-saas" in result.output
+
+    def test_index_publish_saas_binds_segments_to_collection(self, runner, tmp_path):
+        d = tmp_path / "vids"
+        d.mkdir()
+        source = d / "test.mp4"
+        source.write_bytes(b"fake")
+
+        shot_dir = tmp_path / "shots"
+        shot_dir.mkdir()
+        shot_path = shot_dir / "shot_001.mp4"
+        shot_path.write_bytes(b"shot-bytes")
+
+        mock_store = MagicMock()
+        mock_store.is_indexed.return_value = False
+        mock_store.get_stats.return_value = {
+            "total_chunks": 1,
+            "unique_source_files": 1,
+        }
+        mock_embedder = MagicMock()
+        mock_embedder.embed_video_chunk.return_value = [0.1] * 768
+        mock_saas = MagicMock()
+        mock_saas.register_source_video.return_value = {"id": "source-video-id"}
+        mock_saas.create_segment_upload_session.return_value = {
+            "id": "upload-session-id",
+            "callback_token": "callback-token",
+            "upload_url": "https://example.invalid/upload",
+            "upload_headers": {"Content-Type": "video/mp4"},
+        }
+        mock_saas.register_segment.return_value = {"id": "segment-id-1"}
+
+        with patch("sentrysearch.store.SentryStore", return_value=mock_store), \
+             patch("sentrysearch.embedder.get_embedder", return_value=mock_embedder), \
+             patch("sentrysearch.saas_client.VideoSaaSClient.from_env", return_value=mock_saas), \
+             patch("sentrysearch.chunker.segment_video_shots", return_value=[{
+                 "chunk_path": str(shot_path),
+                 "source_file": str(source.resolve()),
+                 "start_time": 0.0,
+                 "end_time": 1.0,
+                 "segment_index": 1,
+                 "segmentation": "shot",
+             }]), \
+             patch("sentrysearch.chunker.is_still_frame_chunk", return_value=False):
+            result = runner.invoke(
+                cli,
+                [
+                    "index",
+                    str(d),
+                    "--segmentation",
+                    "shot",
+                    "--no-preprocess",
+                    "--publish-saas",
+                    "--publish-collection",
+                    "collection-id",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_saas.add_segments_to_container.assert_called_once_with(
+            container_id="collection-id",
+            segment_ids=["segment-id-1"],
+        )
+        assert "collection-id" in result.output
+
+    def test_index_publish_collection_requires_publish_saas(self, runner, tmp_path):
+        d = tmp_path / "vids"
+        d.mkdir()
+        result = runner.invoke(
+            cli,
+            ["index", str(d), "--publish-collection", "collection-id"],
+        )
+
+        assert result.exit_code != 0
+        assert "--publish-collection requires --publish-saas" in result.output
 
     def test_index_shot_surfaces_missing_dependency(self, runner, tmp_path):
         from sentrysearch.shot_detector import ShotDetectionUnavailableError
