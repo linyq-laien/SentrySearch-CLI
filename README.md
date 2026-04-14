@@ -175,6 +175,7 @@ sentrysearch index /path/to/footage --segmentation shot --publish-saas
 ```bash
 sentrysearch index /path/to/footage \
   --segmentation shot \
+  --shot-threshold 0.9 \
   --publish-saas \
   --publish-collection "collection_xxx"
 ```
@@ -192,6 +193,10 @@ sentrysearch search "闯红灯的车辆" --rerank
 - `--overlap 5` — 片段之间的重叠时长（秒）
 - `--segmentation shot` — 按检测到的镜头分段索引，而非固定窗口
 - `--shot-threshold 0.5` — 使用 `--segmentation shot` 时的镜头检测阈值
+- `--segmentation shot` 时会额外做片段质量校验，并给分段打上质量元数据：
+  - `< 0.5s` → `too_short`
+  - ffmpeg `mpdecimate` 判断为重复静态帧视频 → `still_frame`
+  - 片段内部再次检测到多个 scene → `internal_scene_cut`
 - `--no-preprocess` — 跳过降分辨率/降帧率（发送原始片段）
 - `--target-resolution 480` — 预处理目标高度（像素）
 - `--target-fps 5` — 预处理目标帧率
@@ -235,6 +240,20 @@ sentrysearch shots /path/to/video.mp4 --split --output-dir ./my_shots
 ```bash
 sentrysearch index /path/to/video/footage --segmentation shot
 ```
+
+当使用 `--segmentation shot` 进行索引时，CLI 会对每个切出来的镜头片段做一次质量复核：
+
+- 时长小于 `0.5s` 的片段会标记为 `too_short`
+- 用 ffmpeg `mpdecimate` 去重后仅保留极少帧的“单图重复播放”片段会标记为 `still_frame`
+- 片段内部如果再次检测到多个镜头，则会标记为 `internal_scene_cut`
+
+这些质量标记会：
+
+- 写入本地 ChromaDB metadata
+- 在 `--publish-saas` 时透传到 segment 的 `extension_metadata`
+- 在 CLI 输出中显示 low-quality warning / summary
+
+默认情况下，`--skip-still` 仍然生效，所以被识别为静态帧的片段会被跳过嵌入；如果你要强制保留这些片段，请显式传入 `--no-skip-still`。
 
 ### 搜索
 
@@ -465,7 +484,7 @@ Gemini API 从上传的视频中原生提取并编码每秒正好 1 帧，与视
 
 ## 限制与未来计划
 
-- **静帧检测是启发式的** — 它使用采样帧的 JPEG 文件大小比较。偶尔可能跳过有微弱运动的片段或嵌入真正静态的片段。如需索引每个片段，请使用 `--no-skip-still`。
+- **静帧检测仍是启发式的** — 当前使用 ffmpeg `mpdecimate` 统计去重后的保留帧比例，能够识别“同一张图重复播放成一段视频”的情况，但在极轻微运动、字幕闪烁或压缩噪声较大的片段上仍可能误判。如需索引每个片段，请使用 `--no-skip-still`。
 - **搜索质量取决于片段边界** — 如果一个事件跨越两个片段，重叠窗口有帮助但不完美。更智能的分块（如场景检测）可以改善此问题。
 - **Gemini Embedding 2 处于预览阶段** — API 行为和定价可能变更。
 

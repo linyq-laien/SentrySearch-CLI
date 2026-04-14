@@ -1,4 +1,4 @@
 interface:
   display_name: "Index Shot Publish SaaS"
-  short_description: "用 shot 分段索引单个视频并同步发布到 video-saas。"
-  default_prompt: "使用这个 skill 执行 uv run sentrysearch index PATH --segmentation shot --publish-saas。"
+  short_description: "用 shot 分段索引单个视频并同步发布到 video-saas，同时读取 low-quality shot 校验结果。"
+  default_prompt: "使用这个 skill 执行 uv run sentrysearch index PATH --segmentation shot --publish-saas，并关注 too_short / still_frame / internal_scene_cut 这些 low-quality shot 提示。"
