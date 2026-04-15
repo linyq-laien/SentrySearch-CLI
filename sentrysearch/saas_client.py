@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,11 @@ class VideoSaaSConfigError(RuntimeError):
 
 class VideoSaaSRequestError(RuntimeError):
     """Raised when the video-saas API returns an error."""
+
+
+def format_duration_seconds(duration_ms: int) -> str:
+    """Format milliseconds as a seconds string with exactly 3 decimals."""
+    return format(Decimal(duration_ms) / Decimal("1000"), ".3f")
 
 
 def _stable_id(*parts: object) -> str:
@@ -246,6 +252,7 @@ class VideoSaaSClient:
         start_ms = int(round(start_time * 1000))
         end_ms = int(round(end_time * 1000))
         duration_ms = max(0, end_ms - start_ms)
+        duration_seconds = format_duration_seconds(duration_ms)
         search_phrases = [
             title,
             f"{Path(file_path).stem}",
@@ -264,6 +271,7 @@ class VideoSaaSClient:
             "start_ms": start_ms,
             "end_ms": end_ms,
             "duration_ms": duration_ms,
+            "duration_seconds": duration_seconds,
             "search_phrases": search_phrases,
             "safety_flags": [],
             "primary_people": [],
