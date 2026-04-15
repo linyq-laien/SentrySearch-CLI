@@ -180,6 +180,15 @@ sentrysearch index /path/to/footage \
   --publish-collection "collection_xxx"
 ```
 
+**示例：跳过所有 low-quality shot 片段（不做 embedding / 不上传）**
+
+```bash
+sentrysearch index /path/to/footage \
+  --segmentation shot \
+  --publish-saas \
+  --skip-low-quality
+```
+
 **示例：Qwen 后端 + 重排序**
 
 ```bash
@@ -203,6 +212,7 @@ sentrysearch search "闯红灯的车辆" --rerank
 - `--no-skip-still` — 嵌入所有片段，包括无视觉变化的静帧
 - `--publish-saas` — 在本地分段和 embedding 之后，把每个片段上传到 video-saas（注册 source video、申请上传会话、上传到 R2、注册 segment）
 - `--publish-collection "collection_xxx"` — 与 `--publish-saas` 搭配使用；按合集 id 绑定上传后的 segments
+- `--skip-low-quality` — 跳过被标记为 low-quality 的 shot 片段（`too_short` / `still_frame` / `internal_scene_cut`），不做 embedding、不写入本地库、也不上传到 video-saas
 
 启用 `--publish-saas` 时，需要以下环境变量：
 

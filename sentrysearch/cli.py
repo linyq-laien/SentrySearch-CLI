@@ -71,6 +71,11 @@ def _segment_quality_warning(chunk: dict) -> str | None:
     return f"low-quality shot: {reason}"
 
 
+def _is_low_quality_shot(chunk: dict) -> bool:
+    """Return True when shot segmentation marked a chunk as low quality."""
+    return chunk.get("segment_quality") == "low"
+
+
 def _handle_error(e: Exception) -> None:
     """Print a user-friendly error and exit."""
     from .doubao_embedder import (
@@ -421,6 +426,8 @@ def label(path, output_dir, model, overwrite, verbose):
               help="Target frames per second for preprocessing.")
 @click.option("--skip-still/--no-skip-still", default=True, show_default=True,
               help="Skip chunks with no meaningful visual change.")
+@click.option("--skip-low-quality/--no-skip-low-quality", default=False, show_default=True,
+              help="Skip shot segments flagged as low quality before embedding/upload.")
 @click.option("--backend", type=click.Choice(["gemini", "local", "doubao", "qwen"]), default=None,
               help="Embedding backend (default: gemini, or local when --model is set).")
 @click.option("--model", default=None, show_default=False,
@@ -434,7 +441,8 @@ def label(path, output_dir, model, overwrite, verbose):
               help="Collection id in video-saas. Uploaded segments will be bound to it.")
 @click.option("--verbose", is_flag=True, help="Show debug info.")
 def index(directory, segmentation, chunk_duration, overlap, shot_threshold, preprocess, target_resolution,
-          target_fps, skip_still, backend, model, quantize, publish_saas, publish_collection, verbose):
+          target_fps, skip_still, skip_low_quality, backend, model, quantize, publish_saas,
+          publish_collection, verbose):
     """Index supported video files in DIRECTORY for searching."""
     from .chunker import (
         SUPPORTED_VIDEO_EXTENSIONS,
@@ -497,6 +505,7 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
         new_files = 0
         new_chunks = 0
         skipped_chunks = 0
+        skipped_low_quality_chunks = 0
         low_quality_chunks = 0
 
         if verbose:
@@ -532,15 +541,6 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
 
             source_video = None
             published_segment_ids = []
-            if saas_client and chunks:
-                duration_ms = int(round(max(chunk["end_time"] for chunk in chunks) * 1000))
-                source_video = saas_client.register_source_video(
-                    source_file=abs_path,
-                    duration_ms=duration_ms,
-                    backend=backend,
-                    model=store_model,
-                    segmentation=segmentation,
-                )
 
             # Track files to clean up after processing
             files_to_cleanup = []
@@ -550,6 +550,16 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
                 if quality_warning:
                     low_quality_chunks += 1
                     click.echo(f"  Warning: {quality_warning}", err=True)
+
+                if skip_low_quality and _is_low_quality_shot(chunk):
+                    reason = chunk.get("segment_quality_reason", "unknown")
+                    click.echo(
+                        f"Skipping chunk {chunk_idx}/{num_chunks} "
+                        f"(low quality: {reason})"
+                    )
+                    skipped_low_quality_chunks += 1
+                    files_to_cleanup.append(chunk["chunk_path"])
+                    continue
 
                 if skip_still and is_still_frame_chunk(
                     chunk["chunk_path"], verbose=verbose,
@@ -609,7 +619,16 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
 
                 embedded.append({**chunk, "embedding": embedding})
 
-                if saas_client and source_video is not None:
+                if saas_client:
+                    if source_video is None:
+                        duration_ms = int(round(max(item["end_time"] for item in chunks) * 1000))
+                        source_video = saas_client.register_source_video(
+                            source_file=abs_path,
+                            duration_ms=duration_ms,
+                            backend=backend,
+                            model=store_model,
+                            segmentation=segmentation,
+                        )
                     external_segment_id = build_external_segment_id(
                         source_file=abs_path,
                         start_time=float(chunk["start_time"]),
@@ -712,6 +731,10 @@ def index(directory, segmentation, chunk_duration, overlap, shot_threshold, prep
         summary_notes = []
         if skipped_chunks:
             summary_notes.append(f"skipped {skipped_chunks} still")
+        if skipped_low_quality_chunks:
+            summary_notes.append(
+                f"skipped {skipped_low_quality_chunks} low-quality shot segments"
+            )
         if low_quality_chunks:
             summary_notes.append(f"flagged {low_quality_chunks} low-quality shot segments")
         summary_suffix = f" ({', '.join(summary_notes)})" if summary_notes else ""
