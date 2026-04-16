@@ -94,6 +94,14 @@ sentrysearch search "闯红灯的红色卡车"
 
 > **手动配置：** 如果不想使用 `sentrysearch init`，可以复制 `.env.example` 为 `.env`，手动填入从 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) 获取的 API Key。
 
+7. 发布到 video-saas：
+
+```bash
+uv run sentrysearch index /Users/apple/test1.mp4 --segmentation shot --publish-saas  --skip-low-quality  --verbose 
+```
+
+> **提示：** 需要先配置 `VIDEO_SAAS_BASE_URL` 和 `VIDEO_SAAS_INTEGRATION_KEY` 环境变量。
+
 ## 用法
 
 ### 初始化
